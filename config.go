@@ -25,10 +25,12 @@ func getEnvInt(key string, fallback int) int {
 }
 
 var (
-	flagListenAddr  = flag.String("listenAddr", getEnv("LISTEN_ADDR", "localhost:4317"), "The listen address")
-	flagMaxMsgSize  = flag.Int("maxReceiveMessageSize", getEnvInt("MAX_RECEIVE_MESSAGE_SIZE", 16777216), "The max message size in bytes")
-	flagChannelSize = flag.Int("channelSize", getEnvInt("CHANNEL_SIZE", 1000), "Ingestion channel buffer size")
-	flagWorkerCount = flag.Int("workerCount", getEnvInt("WORKER_COUNT", 4), "Number of concurrent background workers")
+	flagListenAddr         = flag.String("listenAddr", getEnv("LISTEN_ADDR", "localhost:4317"), "The listen address")
+	flagMaxMsgSize         = flag.Int("maxReceiveMessageSize", getEnvInt("MAX_RECEIVE_MESSAGE_SIZE", 16777216), "The max message size in bytes")
+	flagChannelSize        = flag.Int("channelSize", getEnvInt("CHANNEL_SIZE", 1000), "Ingestion channel buffer size")
+	flagWorkerCount        = flag.Int("workerCount", getEnvInt("WORKER_COUNT", 4), "Number of concurrent background workers")
+	flagKafkaBrokers       = flag.String("kafkaBrokers", getEnv("KAFKA_BROKERS", ""), "The Kafka bootstrap brokers")
+	flagKafkaFallbackTopic = flag.String("kafkaFallbackTopic", getEnv("KAFKA_FALLBACK_TOPIC", "metric-fallback"), "The Kafka fallback topic")
 )
 
 type Config struct {
@@ -40,6 +42,8 @@ type Config struct {
 	ClickHousePassword    string
 	ChannelSize           int
 	WorkerCount           int
+	KafkaBrokers          string
+	KafkaFallbackTopic    string
 }
 
 func LoadConfig() *Config {
@@ -56,5 +60,7 @@ func LoadConfig() *Config {
 		ClickHousePassword:    getEnv("CLICKHOUSE_PASSWORD", ""),
 		ChannelSize:           *flagChannelSize,
 		WorkerCount:           *flagWorkerCount,
+		KafkaBrokers:          *flagKafkaBrokers,
+		KafkaFallbackTopic:    *flagKafkaFallbackTopic,
 	}
 }

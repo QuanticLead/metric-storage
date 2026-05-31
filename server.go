@@ -107,6 +107,12 @@ func run() (err error) {
 		err = errors.Join(err, otelShutdown(context.Background()))
 	}()
 
+	// Initialize Kafka fallback.
+	if err := InitKafka(cfg); err != nil {
+		return fmt.Errorf("initializing kafka fallback: %w", err)
+	}
+	defer CloseKafka()
+
 	var store MetricsStore
 	if cfg.ClickHouseAddr != "" {
 		slog.Info("Connecting to ClickHouse", slog.String("addr", cfg.ClickHouseAddr), slog.String("db", cfg.ClickHouseDB))
@@ -180,14 +186,20 @@ func startWorkers(store MetricsStore, workerCount int) {
 							if err := store.InsertGauge(workerCtx, job.Gauges); err != nil {
 								span.RecordError(err)
 								span.SetStatus(codes.Error, err.Error())
-								slog.ErrorContext(workerCtx, "Worker failed to insert gauges", slog.Int("id", workerID), "error", err)
+								slog.ErrorContext(workerCtx, "Worker failed to insert gauges, attempting Kafka fallback", slog.Int("id", workerID), "error", err)
+								if fallbackErr := PublishFallbackMetrics(workerCtx, "gauge", job.Gauges); fallbackErr != nil {
+									slog.ErrorContext(workerCtx, "Kafka fallback for gauges failed", slog.Int("id", workerID), "error", fallbackErr)
+								}
 							}
 						}
 						if len(job.Sums) > 0 {
 							if err := store.InsertSum(workerCtx, job.Sums); err != nil {
 								span.RecordError(err)
 								span.SetStatus(codes.Error, err.Error())
-								slog.ErrorContext(workerCtx, "Worker failed to insert sums", slog.Int("id", workerID), "error", err)
+								slog.ErrorContext(workerCtx, "Worker failed to insert sums, attempting Kafka fallback", slog.Int("id", workerID), "error", err)
+								if fallbackErr := PublishFallbackMetrics(workerCtx, "sum", job.Sums); fallbackErr != nil {
+									slog.ErrorContext(workerCtx, "Kafka fallback for sums failed", slog.Int("id", workerID), "error", fallbackErr)
+								}
 							}
 						}
 					}
