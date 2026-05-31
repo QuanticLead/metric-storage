@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"fmt"
 	"log"
 	"log/slog"
 	"net"
+	"os"
 
 	"go.opentelemetry.io/contrib/bridges/otelslog"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
@@ -63,6 +65,34 @@ func run() (err error) {
 
 	flag.Parse()
 
+	// Parse ClickHouse configuration
+	chAddr := os.Getenv("CLICKHOUSE_ADDR")
+	var store MetricsStore
+	if chAddr != "" {
+		chDB := os.Getenv("CLICKHOUSE_DB")
+		if chDB == "" {
+			chDB = "default"
+		}
+		chUser := os.Getenv("CLICKHOUSE_USER")
+		if chUser == "" {
+			chUser = "default"
+		}
+		chPassword := os.Getenv("CLICKHOUSE_PASSWORD")
+
+		slog.Info("Connecting to ClickHouse", slog.String("addr", chAddr), slog.String("db", chDB))
+		clickhouseStore, err := NewClickHouseMetricsStore(context.Background(), chAddr, chDB, chUser, chPassword)
+		if err != nil {
+			return fmt.Errorf("connecting to clickhouse: %w", err)
+		}
+		defer clickhouseStore.Close()
+
+		slog.Info("Creating ClickHouse tables if not exist")
+		if err := clickhouseStore.CreateTables(context.Background()); err != nil {
+			return fmt.Errorf("creating clickhouse tables: %w", err)
+		}
+		store = clickhouseStore
+	}
+
 	slog.Debug("Starting listener", slog.String("listenAddr", *listenAddr))
 	listener, err := net.Listen("tcp", *listenAddr)
 	if err != nil {
@@ -74,7 +104,7 @@ func run() (err error) {
 		grpc.MaxRecvMsgSize(*maxReceiveMessageSize),
 		grpc.Creds(insecure.NewCredentials()),
 	)
-	colmetricspb.RegisterMetricsServiceServer(grpcServer, newServer(*listenAddr, nil))
+	colmetricspb.RegisterMetricsServiceServer(grpcServer, newServer(*listenAddr, store))
 
 	slog.Debug("Starting gRPC server")
 

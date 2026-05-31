@@ -1,0 +1,48 @@
+version: '3.8'
+
+services:
+  clickhouse:
+    image: clickhouse/clickhouse-server:26.2
+    container_name: clickhouse
+    ports:
+      - "9000:9000"
+      - "8123:8123"
+    environment:
+      - CLICKHOUSE_USER=default
+      - CLICKHOUSE_PASSWORD=test
+      - CLICKHOUSE_DB=default
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--user", "default", "--password", "test", "--query", "SELECT 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: metric-storage-server
+    ports:
+      - "4317:4317"
+    environment:
+      - CLICKHOUSE_ADDR=clickhouse:9000
+      - CLICKHOUSE_DB=default
+      - CLICKHOUSE_USER=default
+      - CLICKHOUSE_PASSWORD=test
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+
+  telemetrygen-gauge:
+    image: ghcr.io/open-telemetry/opentelemetry-collector-contrib/telemetrygen:latest
+    container_name: telemetrygen-gauge
+    command: ["metrics", "--otlp-endpoint", "server:4317", "--otlp-insecure", "--rate", "2500", "--duration", "10s", "--metric-type", "Gauge"]
+    depends_on:
+      - server
+
+  telemetrygen-sum:
+    image: ghcr.io/open-telemetry/opentelemetry-collector-contrib/telemetrygen:latest
+    container_name: telemetrygen-sum
+    command: ["metrics", "--otlp-endpoint", "server:4317", "--otlp-insecure", "--rate", "2500", "--duration", "10s", "--metric-type", "Sum"]
+    depends_on:
+      - server

@@ -1,6 +1,6 @@
 MODULE := dash0.com/otlp-log-processor-backend
 
-.PHONY: build run test test-integration test-all fmt vet lint tidy clean
+.PHONY: build run test test-integration test-all fmt vet lint tidy clean benchmark-run benchmark-clean
 
 build:
 	go build ./...
@@ -34,3 +34,12 @@ tidy:
 
 clean:
 	go clean ./...
+
+benchmark-run:
+	docker compose down -v
+	docker compose up -d clickhouse server
+	docker compose up telemetrygen-gauge telemetrygen-sum
+	./benchmark/analyze.sh
+
+benchmark-clean:
+	docker compose down -v
