@@ -116,7 +116,7 @@ func run() (err error) {
 	var store MetricsStore
 	if cfg.ClickHouseAddr != "" {
 		slog.Info("Connecting to ClickHouse", slog.String("addr", cfg.ClickHouseAddr), slog.String("db", cfg.ClickHouseDB))
-		clickhouseStore, err := NewClickHouseMetricsStore(context.Background(), cfg.ClickHouseAddr, cfg.ClickHouseDB, cfg.ClickHouseUser, cfg.ClickHousePassword)
+		clickhouseStore, err := NewClickHouseMetricsStore(context.Background(), cfg.ClickHouseAddr, cfg.ClickHouseDB, cfg.ClickHouseUser, cfg.ClickHousePassword, cfg.MetricMetadataCacheSize)
 		if err != nil {
 			return fmt.Errorf("connecting to clickhouse: %w", err)
 		}

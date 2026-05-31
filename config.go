@@ -27,23 +27,25 @@ func getEnvInt(key string, fallback int) int {
 var (
 	flagListenAddr         = flag.String("listenAddr", getEnv("LISTEN_ADDR", "localhost:4317"), "The listen address")
 	flagMaxMsgSize         = flag.Int("maxReceiveMessageSize", getEnvInt("MAX_RECEIVE_MESSAGE_SIZE", 16777216), "The max message size in bytes")
-	flagChannelSize        = flag.Int("channelSize", getEnvInt("CHANNEL_SIZE", 1000), "Ingestion channel buffer size")
-	flagWorkerCount        = flag.Int("workerCount", getEnvInt("WORKER_COUNT", 4), "Number of concurrent background workers")
-	flagKafkaBrokers       = flag.String("kafkaBrokers", getEnv("KAFKA_BROKERS", ""), "The Kafka bootstrap brokers")
-	flagKafkaFallbackTopic = flag.String("kafkaFallbackTopic", getEnv("KAFKA_FALLBACK_TOPIC", "metric-fallback"), "The Kafka fallback topic")
+	flagChannelSize            = flag.Int("channelSize", getEnvInt("CHANNEL_SIZE", 1000), "Ingestion channel buffer size")
+	flagWorkerCount            = flag.Int("workerCount", getEnvInt("WORKER_COUNT", 4), "Number of concurrent background workers")
+	flagKafkaBrokers           = flag.String("kafkaBrokers", getEnv("KAFKA_BROKERS", ""), "The Kafka bootstrap brokers")
+	flagKafkaFallbackTopic     = flag.String("kafkaFallbackTopic", getEnv("KAFKA_FALLBACK_TOPIC", "metric-fallback"), "The Kafka fallback topic")
+	flagMetricMetadataCacheSize = flag.Int("metricMetadataCacheSize", getEnvInt("METRICS_CACHE_SIZE", 50000), "Capacity of the metric metadata cache")
 )
 
 type Config struct {
-	ListenAddr            string
-	MaxReceiveMessageSize int
-	ClickHouseAddr        string
-	ClickHouseDB          string
-	ClickHouseUser        string
-	ClickHousePassword    string
-	ChannelSize           int
-	WorkerCount           int
-	KafkaBrokers          string
-	KafkaFallbackTopic    string
+	ListenAddr              string
+	MaxReceiveMessageSize   int
+	ClickHouseAddr          string
+	ClickHouseDB            string
+	ClickHouseUser          string
+	ClickHousePassword      string
+	ChannelSize             int
+	WorkerCount             int
+	KafkaBrokers            string
+	KafkaFallbackTopic      string
+	MetricMetadataCacheSize int
 }
 
 func LoadConfig() *Config {
@@ -52,15 +54,16 @@ func LoadConfig() *Config {
 	}
 
 	return &Config{
-		ListenAddr:            *flagListenAddr,
-		MaxReceiveMessageSize: *flagMaxMsgSize,
-		ClickHouseAddr:        getEnv("CLICKHOUSE_ADDR", ""),
-		ClickHouseDB:          getEnv("CLICKHOUSE_DB", "default"),
-		ClickHouseUser:        getEnv("CLICKHOUSE_USER", "default"),
-		ClickHousePassword:    getEnv("CLICKHOUSE_PASSWORD", ""),
-		ChannelSize:           *flagChannelSize,
-		WorkerCount:           *flagWorkerCount,
-		KafkaBrokers:          *flagKafkaBrokers,
-		KafkaFallbackTopic:    *flagKafkaFallbackTopic,
+		ListenAddr:              *flagListenAddr,
+		MaxReceiveMessageSize:   *flagMaxMsgSize,
+		ClickHouseAddr:          getEnv("CLICKHOUSE_ADDR", ""),
+		ClickHouseDB:            getEnv("CLICKHOUSE_DB", "default"),
+		ClickHouseUser:          getEnv("CLICKHOUSE_USER", "default"),
+		ClickHousePassword:      getEnv("CLICKHOUSE_PASSWORD", ""),
+		ChannelSize:             *flagChannelSize,
+		WorkerCount:             *flagWorkerCount,
+		KafkaBrokers:            *flagKafkaBrokers,
+		KafkaFallbackTopic:      *flagKafkaFallbackTopic,
+		MetricMetadataCacheSize: *flagMetricMetadataCacheSize,
 	}
 }

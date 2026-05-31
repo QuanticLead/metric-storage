@@ -6,12 +6,12 @@ import (
 	"encoding/binary"
 	"fmt"
 	"sort"
-	"sync"
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"github.com/google/uuid"
+	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/zeebo/xxh3"
 )
 
@@ -52,11 +52,9 @@ type MetricsStore interface {
 
 // ClickHouseMetricsStore implements MetricsStore using a ClickHouse connection.
 type ClickHouseMetricsStore struct {
-	conn driver.Conn
+	conn          driver.Conn
+	metadataCache *lru.Cache[uuid.UUID, bool]
 }
-
-// In-memory cache for registered MetricIDs
-var metadataCache sync.Map // map[uuid.UUID]bool
 
 // Serialize map deterministically by sorting keys
 func writeSortedMap(buf *bytes.Buffer, m map[string]string) {
@@ -98,7 +96,7 @@ func computeMetricID(r *GaugeRow) uuid.UUID {
 }
 
 // NewClickHouseMetricsStore creates a new ClickHouseMetricsStore connected to the given address.
-func NewClickHouseMetricsStore(ctx context.Context, addr string, database string, username string, password string) (*ClickHouseMetricsStore, error) {
+func NewClickHouseMetricsStore(ctx context.Context, addr string, database string, username string, password string, cacheSize int) (*ClickHouseMetricsStore, error) {
 	conn, err := clickhouse.Open(&clickhouse.Options{
 		Addr: []string{addr},
 		Auth: clickhouse.Auth{
@@ -118,7 +116,15 @@ func NewClickHouseMetricsStore(ctx context.Context, addr string, database string
 		_ = conn.Close()
 		return nil, fmt.Errorf("pinging clickhouse: %w", err)
 	}
-	return &ClickHouseMetricsStore{conn: conn}, nil
+	cache, err := lru.New[uuid.UUID, bool](cacheSize)
+	if err != nil {
+		_ = conn.Close()
+		return nil, fmt.Errorf("creating metadata lru cache: %w", err)
+	}
+	return &ClickHouseMetricsStore{
+		conn:          conn,
+		metadataCache: cache,
+	}, nil
 }
 
 // CreateTables executes DDL for all metric tables.
@@ -147,12 +153,12 @@ func (s *ClickHouseMetricsStore) checkAndInsertMetadata(ctx context.Context, row
 
 	for _, r := range rows {
 		id := computeMetricID(&r)
-		if _, cached := metadataCache.Load(id); !cached {
+		if _, cached := s.metadataCache.Get(id); !cached {
 			misses++
 			newMetadataRows = append(newMetadataRows, r)
 			newMetadataIDs = append(newMetadataIDs, id)
 			// Optimistically set to prevent parallel goroutines from duplicate queuing
-			metadataCache.Store(id, true)
+			s.metadataCache.Add(id, true)
 		} else {
 			hits++
 		}
@@ -167,7 +173,7 @@ func (s *ClickHouseMetricsStore) checkAndInsertMetadata(ctx context.Context, row
 		if err != nil {
 			// Roll back the cache store if prepare fails
 			for _, id := range newMetadataIDs {
-				metadataCache.Delete(id)
+				s.metadataCache.Remove(id)
 			}
 			return fmt.Errorf("preparing metadata batch: %w", err)
 		}
@@ -189,14 +195,14 @@ func (s *ClickHouseMetricsStore) checkAndInsertMetadata(ctx context.Context, row
 				r.Attributes,
 			); err != nil {
 				for _, cleanId := range newMetadataIDs {
-					metadataCache.Delete(cleanId)
+					s.metadataCache.Remove(cleanId)
 				}
 				return fmt.Errorf("appending metadata row: %w", err)
 			}
 		}
 		if err := batch.Send(); err != nil {
 			for _, cleanId := range newMetadataIDs {
-				metadataCache.Delete(cleanId)
+				s.metadataCache.Remove(cleanId)
 			}
 			return fmt.Errorf("sending metadata batch: %w", err)
 		}
