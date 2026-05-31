@@ -4,10 +4,12 @@ import (
 	"context"
 	"log/slog"
 
+	"go.opentelemetry.io/otel/codes"
 	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 )
 
 type BatchJob struct {
+	Ctx    context.Context
 	Gauges []GaugeRow
 	Sums   []SumRow
 }
@@ -24,12 +26,16 @@ func newServer(addr string, store MetricsStore) colmetricspb.MetricsServiceServe
 }
 
 func (m *dash0MetricsServiceServer) Export(ctx context.Context, request *colmetricspb.ExportMetricsServiceRequest) (*colmetricspb.ExportMetricsServiceResponse, error) {
+	ctx, span := tracer.Start(ctx, "Export")
+	defer span.End()
+
 	slog.DebugContext(ctx, "Received ExportMetricsServiceRequest")
 	metricsReceivedCounter.Add(ctx, 1)
 
 	if m.store != nil {
 		rm := request.GetResourceMetrics()
 		job := BatchJob{
+			Ctx:    ctx,
 			Gauges: MapGaugeRows(rm),
 			Sums:   MapSumRows(rm),
 		}
@@ -41,11 +47,15 @@ func (m *dash0MetricsServiceServer) Export(ctx context.Context, request *colmetr
 				// Fallback to synchronous insert if channel is not initialized (e.g. in tests)
 				if len(job.Gauges) > 0 {
 					if err := m.store.InsertGauge(ctx, job.Gauges); err != nil {
+						span.RecordError(err)
+						span.SetStatus(codes.Error, err.Error())
 						return nil, err
 					}
 				}
 				if len(job.Sums) > 0 {
 					if err := m.store.InsertSum(ctx, job.Sums); err != nil {
+						span.RecordError(err)
+						span.SetStatus(codes.Error, err.Error())
 						return nil, err
 					}
 				}

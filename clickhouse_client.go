@@ -143,15 +143,23 @@ func (s *ClickHouseMetricsStore) CreateTables(ctx context.Context) error {
 func (s *ClickHouseMetricsStore) checkAndInsertMetadata(ctx context.Context, rows []GaugeRow) error {
 	var newMetadataRows []GaugeRow
 	var newMetadataIDs []uuid.UUID
+	var hits, misses int64
 
 	for _, r := range rows {
 		id := computeMetricID(&r)
 		if _, cached := metadataCache.Load(id); !cached {
+			misses++
 			newMetadataRows = append(newMetadataRows, r)
 			newMetadataIDs = append(newMetadataIDs, id)
 			// Optimistically set to prevent parallel goroutines from duplicate queuing
 			metadataCache.Store(id, true)
+		} else {
+			hits++
 		}
+	}
+
+	if hits > 0 && metadataCacheHits != nil {
+		metadataCacheHits.Add(ctx, hits)
 	}
 
 	if len(newMetadataRows) > 0 {
@@ -192,6 +200,10 @@ func (s *ClickHouseMetricsStore) checkAndInsertMetadata(ctx context.Context, row
 			}
 			return fmt.Errorf("sending metadata batch: %w", err)
 		}
+	}
+
+	if misses > 0 && metadataCacheMisses != nil {
+		metadataCacheMisses.Add(ctx, misses)
 	}
 	return nil
 }
