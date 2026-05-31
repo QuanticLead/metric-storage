@@ -3,12 +3,11 @@ package main
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"log"
 	"log/slog"
 	"net"
-	"os"
+	"sync"
 
 	"go.opentelemetry.io/contrib/bridges/otelslog"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
@@ -20,8 +19,8 @@ import (
 )
 
 var (
-	listenAddr            = flag.String("listenAddr", "localhost:4317", "The listen address")
-	maxReceiveMessageSize = flag.Int("maxReceiveMessageSize", 16777216, "The max message size in bytes the server can receive")
+	ingestionChannel chan BatchJob
+	workerWG         sync.WaitGroup
 )
 
 const name = "dash0.com/otlp-log-processor-backend"
@@ -49,8 +48,10 @@ func main() {
 }
 
 func run() (err error) {
+	cfg := LoadConfig()
+
 	slog.SetDefault(logger)
-	logger.Info("Starting application")
+	logger.Info("Starting application", slog.Any("config", cfg))
 
 	// Set up OpenTelemetry.
 	otelShutdown, err := setupOTelSDK(context.Background())
@@ -63,24 +64,10 @@ func run() (err error) {
 		err = errors.Join(err, otelShutdown(context.Background()))
 	}()
 
-	flag.Parse()
-
-	// Parse ClickHouse configuration
-	chAddr := os.Getenv("CLICKHOUSE_ADDR")
 	var store MetricsStore
-	if chAddr != "" {
-		chDB := os.Getenv("CLICKHOUSE_DB")
-		if chDB == "" {
-			chDB = "default"
-		}
-		chUser := os.Getenv("CLICKHOUSE_USER")
-		if chUser == "" {
-			chUser = "default"
-		}
-		chPassword := os.Getenv("CLICKHOUSE_PASSWORD")
-
-		slog.Info("Connecting to ClickHouse", slog.String("addr", chAddr), slog.String("db", chDB))
-		clickhouseStore, err := NewClickHouseMetricsStore(context.Background(), chAddr, chDB, chUser, chPassword)
+	if cfg.ClickHouseAddr != "" {
+		slog.Info("Connecting to ClickHouse", slog.String("addr", cfg.ClickHouseAddr), slog.String("db", cfg.ClickHouseDB))
+		clickhouseStore, err := NewClickHouseMetricsStore(context.Background(), cfg.ClickHouseAddr, cfg.ClickHouseDB, cfg.ClickHouseUser, cfg.ClickHousePassword)
 		if err != nil {
 			return fmt.Errorf("connecting to clickhouse: %w", err)
 		}
@@ -93,20 +80,59 @@ func run() (err error) {
 		store = clickhouseStore
 	}
 
-	slog.Debug("Starting listener", slog.String("listenAddr", *listenAddr))
-	listener, err := net.Listen("tcp", *listenAddr)
+	// Initialize buffered channel
+	ingestionChannel = make(chan BatchJob, cfg.ChannelSize)
+
+	// Defer graceful channel close and worker drain
+	defer func() {
+		close(ingestionChannel)
+		slog.Info("Ingestion channel closed, draining pending jobs...")
+		workerWG.Wait()
+		slog.Info("All background workers stopped successfully")
+	}()
+
+	// Start workers
+	startWorkers(store, cfg.WorkerCount)
+
+	slog.Debug("Starting listener", slog.String("listenAddr", cfg.ListenAddr))
+	listener, err := net.Listen("tcp", cfg.ListenAddr)
 	if err != nil {
 		return err
 	}
 
 	grpcServer := grpc.NewServer(
 		grpc.StatsHandler(otelgrpc.NewServerHandler()),
-		grpc.MaxRecvMsgSize(*maxReceiveMessageSize),
+		grpc.MaxRecvMsgSize(cfg.MaxReceiveMessageSize),
 		grpc.Creds(insecure.NewCredentials()),
 	)
-	colmetricspb.RegisterMetricsServiceServer(grpcServer, newServer(*listenAddr, store))
+	colmetricspb.RegisterMetricsServiceServer(grpcServer, newServer(cfg.ListenAddr, store))
 
 	slog.Debug("Starting gRPC server")
 
 	return grpcServer.Serve(listener)
+}
+
+func startWorkers(store MetricsStore, workerCount int) {
+	for i := 0; i < workerCount; i++ {
+		workerWG.Add(1)
+		go func(workerID int) {
+			defer workerWG.Done()
+			slog.Debug("Background worker started", slog.Int("id", workerID))
+			for job := range ingestionChannel {
+				if store != nil {
+					if len(job.Gauges) > 0 {
+						if err := store.InsertGauge(context.Background(), job.Gauges); err != nil {
+							slog.Error("Worker failed to insert gauges", slog.Int("id", workerID), "error", err)
+						}
+					}
+					if len(job.Sums) > 0 {
+						if err := store.InsertSum(context.Background(), job.Sums); err != nil {
+							slog.Error("Worker failed to insert sums", slog.Int("id", workerID), "error", err)
+						}
+					}
+				}
+			}
+			slog.Debug("Background worker stopped", slog.Int("id", workerID))
+		}(i)
+	}
 }

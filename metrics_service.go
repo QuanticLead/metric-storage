@@ -7,6 +7,11 @@ import (
 	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 )
 
+type BatchJob struct {
+	Gauges []GaugeRow
+	Sums   []SumRow
+}
+
 type dash0MetricsServiceServer struct {
 	addr  string
 	store MetricsStore
@@ -24,15 +29,26 @@ func (m *dash0MetricsServiceServer) Export(ctx context.Context, request *colmetr
 
 	if m.store != nil {
 		rm := request.GetResourceMetrics()
-
-		if gaugeRows := MapGaugeRows(rm); len(gaugeRows) > 0 {
-			if err := m.store.InsertGauge(ctx, gaugeRows); err != nil {
-				return nil, err
-			}
+		job := BatchJob{
+			Gauges: MapGaugeRows(rm),
+			Sums:   MapSumRows(rm),
 		}
-		if sumRows := MapSumRows(rm); len(sumRows) > 0 {
-			if err := m.store.InsertSum(ctx, sumRows); err != nil {
-				return nil, err
+
+		if len(job.Gauges) > 0 || len(job.Sums) > 0 {
+			if ingestionChannel != nil {
+				ingestionChannel <- job
+			} else {
+				// Fallback to synchronous insert if channel is not initialized (e.g. in tests)
+				if len(job.Gauges) > 0 {
+					if err := m.store.InsertGauge(ctx, job.Gauges); err != nil {
+						return nil, err
+					}
+				}
+				if len(job.Sums) > 0 {
+					if err := m.store.InsertSum(ctx, job.Sums); err != nil {
+						return nil, err
+					}
+				}
 			}
 		}
 	}
