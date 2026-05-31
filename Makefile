@@ -37,7 +37,7 @@ clean:
 
 benchmark-run:
 	docker compose down -v
-	docker compose up -d clickhouse server
+	docker compose up -d --build clickhouse server
 	docker compose up telemetrygen-gauge telemetrygen-sum
 	./benchmark/analyze.sh
 

@@ -46,11 +46,13 @@ query_clickhouse() {
 GAUGE_COUNT=$(query_clickhouse "SELECT count() FROM otel_metrics_gauge")
 SUM_COUNT=$(query_clickhouse "SELECT count() FROM otel_metrics_sum")
 HISTOGRAM_COUNT=$(query_clickhouse "SELECT count() FROM otel_metrics_histogram")
+METADATA_COUNT=$(query_clickhouse "SELECT count() FROM otel_metrics_metadata")
 TOTAL_DB_RECORDS=$((GAUGE_COUNT + SUM_COUNT + HISTOGRAM_COUNT))
 
 echo "Gauges Stored:     $GAUGE_COUNT"
 echo "Sums Stored:       $SUM_COUNT"
 echo "Histograms Stored: $HISTOGRAM_COUNT"
+echo "Metadata Stored:   $METADATA_COUNT"
 echo "Total Stored:      $TOTAL_DB_RECORDS"
 echo ""
 
