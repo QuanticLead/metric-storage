@@ -56,6 +56,21 @@ echo "Metadata Stored:   $METADATA_COUNT"
 echo "Total Stored:      $TOTAL_DB_RECORDS"
 echo ""
 
+echo "Table Storage Utilization:"
+echo "--------------------------"
+docker compose exec -T clickhouse clickhouse-client --user default --password test --database default --format Markdown --query "
+SELECT
+    table,
+    sum(rows) AS rows,
+    formatReadableSize(sum(data_compressed_bytes)) AS compressed,
+    formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed
+FROM system.parts
+WHERE database = 'default' AND active
+GROUP BY table
+ORDER BY table ASC
+" 2>/dev/null || echo "No storage utilization data"
+echo ""
+
 # Calculate stats
 echo "Performance Summary:"
 echo "--------------------"

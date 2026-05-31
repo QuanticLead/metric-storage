@@ -3,37 +3,49 @@
 ## Run 1: Baseline Solution (Wide Tables)
 
 ### Client Ingestion Stats
-* **Gauge Metrics Sent:** 9,034
-* **Sum Metrics Sent:** 8,982
-* **Total Metrics Sent:** 18,016
+* **Gauge Metrics Sent:** 8,100
+* **Sum Metrics Sent:** 8,100
+* **Total Metrics Sent:** 16,200
 * **Duration:** 10s
 
 ### Database (ClickHouse) Storage Stats
-* **Gauges Stored:** 9,034
-* **Sums Stored:** 8,982
+* **Gauges Stored:** 8,100
+* **Sums Stored:** 8,100
 * **Histograms Stored:** 0
-* **Total Records Stored:** 18,016
+* **Total Records Stored:** 16,200
+
+### Table Storage Utilization
+| table | rows | compressed | uncompressed |
+|:-|-:|:-|:-|
+| otel_metrics_gauge | 8100 | 52.30 KiB | 853.49 KiB |
+| otel_metrics_sum | 8100 | 52.54 KiB | 956.31 KiB |
 
 ### Performance Summary
 * **Ingestion Success Rate:** 100%
-* **Database Write Rate:** 1,801 records/second
+* **Database Write Rate:** 1,620 records/second
 
 ## Run 2: Split Metadata Solution (Cached Lookups)
 
 ### Client Ingestion Stats
-* **Gauge Metrics Sent:** 9,000
-* **Sum Metrics Sent:** 9,004
-* **Total Metrics Sent:** 18,004
+* **Gauge Metrics Sent:** 8,000
+* **Sum Metrics Sent:** 8,000
+* **Total Metrics Sent:** 16,000
 * **Duration:** 10s
 
 ### Database (ClickHouse) Storage Stats
-* **Gauges Stored:** 9,000
-* **Sums Stored:** 9,004
+* **Gauges Stored:** 8,000
+* **Sums Stored:** 8,000
 * **Histograms Stored:** 0
-* **Metadata Stored:** 1
-* **Total Records Stored:** 18,004
+* **Metadata Stored:** 858
+* **Total Records Stored:** 16,000
+
+### Table Storage Utilization
+| table | rows | compressed | uncompressed |
+|:-|-:|:-|:-|
+| otel_metrics_gauge | 8000 | 69.50 KiB | 250.09 KiB |
+| otel_metrics_metadata | 858 | 17.12 KiB | 90.61 KiB |
+| otel_metrics_sum | 8000 | 69.71 KiB | 351.61 KiB |
 
 ### Performance Summary
 * **Ingestion Success Rate:** 100%
-* **Database Write Rate:** 1,800 records/second
-
+* **Database Write Rate:** 1,600 records/second

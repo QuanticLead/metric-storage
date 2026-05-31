@@ -36,13 +36,13 @@ services:
   telemetrygen-gauge:
     image: ghcr.io/open-telemetry/opentelemetry-collector-contrib/telemetrygen:latest
     container_name: telemetrygen-gauge
-    command: ["metrics", "--otlp-endpoint", "server:4317", "--otlp-insecure", "--rate", "2500", "--duration", "10s", "--metric-type", "Gauge"]
+    command: ["metrics", "--otlp-endpoint", "server:4317", "--otlp-insecure", "--rate", "2500", "--duration", "10s", "--metric-type", "Gauge", "--unique-timeseries", "--unique-timeseries-duration", "1s"]
     depends_on:
       - server
 
   telemetrygen-sum:
     image: ghcr.io/open-telemetry/opentelemetry-collector-contrib/telemetrygen:latest
     container_name: telemetrygen-sum
-    command: ["metrics", "--otlp-endpoint", "server:4317", "--otlp-insecure", "--rate", "2500", "--duration", "10s", "--metric-type", "Sum"]
+    command: ["metrics", "--otlp-endpoint", "server:4317", "--otlp-insecure", "--rate", "2500", "--duration", "10s", "--metric-type", "Sum", "--unique-timeseries", "--unique-timeseries-duration", "1s"]
     depends_on:
       - server
