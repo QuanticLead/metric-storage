@@ -1,6 +1,9 @@
 # Build stage
 FROM golang:1.26-alpine AS builder
 
+# Install build dependencies for confluent-kafka-go
+RUN apk add --no-cache build-base librdkafka-dev
+
 WORKDIR /app
 
 # Copy dependency files
@@ -10,11 +13,14 @@ RUN go mod download
 # Copy source code
 COPY . .
 
-# Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -o metric-storage .
+# Build the application with CGO enabled
+RUN CGO_ENABLED=1 GOOS=linux go build -tags musl -o metric-storage .
 
 # Final stage
 FROM alpine:3.19
+
+# Install runtime dependencies for confluent-kafka-go
+RUN apk add --no-cache librdkafka
 
 WORKDIR /app
 

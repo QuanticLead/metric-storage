@@ -29,9 +29,27 @@ services:
       - CLICKHOUSE_DB=default
       - CLICKHOUSE_USER=default
       - CLICKHOUSE_PASSWORD=test
+      - KAFKA_BROKERS=redpanda:9092
+      - KAFKA_FALLBACK_TOPIC=metric-fallback
     depends_on:
       clickhouse:
         condition: service_healthy
+      redpanda:
+        condition: service_started
+
+  redpanda:
+    image: docker.redpanda.com/redpandadata/redpanda:v24.1.1
+    container_name: redpanda
+    command:
+      - redpanda
+      - start
+      - --mode
+      - dev-container
+      - --kafka-addr
+      - PLAINTEXT://0.0.0.0:9092
+      - --overprovisioned
+    ports:
+      - "9092:9092"
 
   telemetrygen-gauge:
     image: ghcr.io/open-telemetry/opentelemetry-collector-contrib/telemetrygen:latest
