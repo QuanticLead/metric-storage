@@ -37,7 +37,9 @@ var (
 	workersActive       metric.Int64UpDownCounter
 	queueLengthGauge    metric.Int64ObservableGauge
 	metadataCacheHits   metric.Int64Counter
-	metadataCacheMisses metric.Int64Counter
+	metadataCacheMisses    metric.Int64Counter
+	ingestionErrorsCounter metric.Int64Counter
+	batchSizeHistogram     metric.Int64Histogram
 )
 
 func init() {
@@ -79,6 +81,20 @@ func init() {
 	metadataCacheMisses, err = meter.Int64Counter("com.dash0.homeexercise.metadata_cache.misses",
 		metric.WithDescription("The number of metadata cache misses"),
 		metric.WithUnit("{miss}"))
+	if err != nil {
+		panic(err)
+	}
+
+	ingestionErrorsCounter, err = meter.Int64Counter("com.dash0.homeexercise.ingestion.errors",
+		metric.WithDescription("The number of failed ingestion attempts"),
+		metric.WithUnit("{error}"))
+	if err != nil {
+		panic(err)
+	}
+
+	batchSizeHistogram, err = meter.Int64Histogram("com.dash0.homeexercise.ingestion.batch_size",
+		metric.WithDescription("The size of the batches processed by workers"),
+		metric.WithUnit("{metric}"))
 	if err != nil {
 		panic(err)
 	}
@@ -183,22 +199,28 @@ func startWorkers(store MetricsStore, workerCount int) {
 
 					if store != nil {
 						if len(job.Gauges) > 0 {
+							batchSizeHistogram.Record(workerCtx, int64(len(job.Gauges)), metric.WithAttributes(attribute.String("type", "gauge")))
 							if err := store.InsertGauge(workerCtx, job.Gauges); err != nil {
+								ingestionErrorsCounter.Add(workerCtx, 1, metric.WithAttributes(attribute.String("destination", "clickhouse"), attribute.String("type", "gauge")))
 								span.RecordError(err)
 								span.SetStatus(codes.Error, err.Error())
-								slog.ErrorContext(workerCtx, "Worker failed to insert gauges, attempting Kafka fallback", slog.Int("id", workerID), "error", err)
+								slog.ErrorContext(workerCtx, "Worker failed to insert gauges, attempting Kafka fallback", slog.Int("id", workerID), slog.Int("batch_size", len(job.Gauges)), "error", err)
 								if fallbackErr := PublishFallbackMetrics(workerCtx, "gauge", job.Gauges); fallbackErr != nil {
-									slog.ErrorContext(workerCtx, "Kafka fallback for gauges failed", slog.Int("id", workerID), "error", fallbackErr)
+									ingestionErrorsCounter.Add(workerCtx, 1, metric.WithAttributes(attribute.String("destination", "kafka"), attribute.String("type", "gauge")))
+									slog.ErrorContext(workerCtx, "Kafka fallback for gauges failed", slog.Int("id", workerID), slog.Int("batch_size", len(job.Gauges)), "error", fallbackErr)
 								}
 							}
 						}
 						if len(job.Sums) > 0 {
+							batchSizeHistogram.Record(workerCtx, int64(len(job.Sums)), metric.WithAttributes(attribute.String("type", "sum")))
 							if err := store.InsertSum(workerCtx, job.Sums); err != nil {
+								ingestionErrorsCounter.Add(workerCtx, 1, metric.WithAttributes(attribute.String("destination", "clickhouse"), attribute.String("type", "sum")))
 								span.RecordError(err)
 								span.SetStatus(codes.Error, err.Error())
-								slog.ErrorContext(workerCtx, "Worker failed to insert sums, attempting Kafka fallback", slog.Int("id", workerID), "error", err)
+								slog.ErrorContext(workerCtx, "Worker failed to insert sums, attempting Kafka fallback", slog.Int("id", workerID), slog.Int("batch_size", len(job.Sums)), "error", err)
 								if fallbackErr := PublishFallbackMetrics(workerCtx, "sum", job.Sums); fallbackErr != nil {
-									slog.ErrorContext(workerCtx, "Kafka fallback for sums failed", slog.Int("id", workerID), "error", fallbackErr)
+									ingestionErrorsCounter.Add(workerCtx, 1, metric.WithAttributes(attribute.String("destination", "kafka"), attribute.String("type", "sum")))
+									slog.ErrorContext(workerCtx, "Kafka fallback for sums failed", slog.Int("id", workerID), slog.Int("batch_size", len(job.Sums)), "error", fallbackErr)
 								}
 							}
 						}

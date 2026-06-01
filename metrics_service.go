@@ -47,7 +47,7 @@ func (m *dash0MetricsServiceServer) Export(ctx context.Context, request *colmetr
 				// Fallback to synchronous insert if channel is not initialized (e.g. in tests)
 				if len(job.Gauges) > 0 {
 					if err := m.store.InsertGauge(ctx, job.Gauges); err != nil {
-						slog.ErrorContext(ctx, "Synchronous InsertGauge failed, attempting Kafka fallback", "error", err)
+						slog.ErrorContext(ctx, "Synchronous InsertGauge failed, attempting Kafka fallback", slog.Int("batch_size", len(job.Gauges)), "error", err)
 						if fallbackErr := PublishFallbackMetrics(ctx, "gauge", job.Gauges); fallbackErr != nil {
 							span.RecordError(err)
 							span.SetStatus(codes.Error, err.Error())
@@ -57,7 +57,7 @@ func (m *dash0MetricsServiceServer) Export(ctx context.Context, request *colmetr
 				}
 				if len(job.Sums) > 0 {
 					if err := m.store.InsertSum(ctx, job.Sums); err != nil {
-						slog.ErrorContext(ctx, "Synchronous InsertSum failed, attempting Kafka fallback", "error", err)
+						slog.ErrorContext(ctx, "Synchronous InsertSum failed, attempting Kafka fallback", slog.Int("batch_size", len(job.Sums)), "error", err)
 						if fallbackErr := PublishFallbackMetrics(ctx, "sum", job.Sums); fallbackErr != nil {
 							span.RecordError(err)
 							span.SetStatus(codes.Error, err.Error())

@@ -6,6 +6,7 @@ import (
 	"log/slog"
 
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
+	"go.opentelemetry.io/otel/codes"
 )
 
 var (
@@ -68,6 +69,9 @@ func FlushKafka(timeoutMs int) int {
 
 // PublishFallbackMetrics serializes metrics and publishes them to the Kafka fallback topic.
 func PublishFallbackMetrics(ctx context.Context, metricType string, rawMetrics interface{}) error {
+	ctx, span := tracer.Start(ctx, "Kafka.PublishFallbackMetrics")
+	defer span.End()
+
 	if kafkaProducer == nil {
 		slog.WarnContext(ctx, "Kafka producer not initialized. Dropping metric fallback batch.", slog.String("type", metricType))
 		return nil
@@ -94,6 +98,8 @@ func PublishFallbackMetrics(ctx context.Context, metricType string, rawMetrics i
 
 	err = kafkaProducer.Produce(msg, nil)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		slog.ErrorContext(ctx, "Failed to produce fallback metrics to Kafka", "error", err)
 		return err
 	}

@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/zeebo/xxh3"
+	"go.opentelemetry.io/otel/codes"
 )
 
 // GaugeRow represents a single gauge data point for ClickHouse insertion.
@@ -147,6 +148,9 @@ func (s *ClickHouseMetricsStore) CreateTables(ctx context.Context) error {
 
 // checkAndInsertMetadata checks the cache for the MetricID of each row and batch inserts new metadata.
 func (s *ClickHouseMetricsStore) checkAndInsertMetadata(ctx context.Context, rows []GaugeRow) error {
+	ctx, span := tracer.Start(ctx, "ClickHouse.checkAndInsertMetadata")
+	defer span.End()
+
 	var newMetadataRows []GaugeRow
 	var newMetadataIDs []uuid.UUID
 	var hits, misses int64
@@ -171,6 +175,8 @@ func (s *ClickHouseMetricsStore) checkAndInsertMetadata(ctx context.Context, row
 	if len(newMetadataRows) > 0 {
 		batch, err := s.conn.PrepareBatch(ctx, "INSERT INTO otel_metrics_metadata")
 		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
 			// Roll back the cache store if prepare fails
 			for _, id := range newMetadataIDs {
 				s.metadataCache.Remove(id)
@@ -197,6 +203,8 @@ func (s *ClickHouseMetricsStore) checkAndInsertMetadata(ctx context.Context, row
 				for _, cleanId := range newMetadataIDs {
 					s.metadataCache.Remove(cleanId)
 				}
+				span.RecordError(err)
+				span.SetStatus(codes.Error, err.Error())
 				return fmt.Errorf("appending metadata row: %w", err)
 			}
 		}
@@ -204,6 +212,8 @@ func (s *ClickHouseMetricsStore) checkAndInsertMetadata(ctx context.Context, row
 			for _, cleanId := range newMetadataIDs {
 				s.metadataCache.Remove(cleanId)
 			}
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
 			return fmt.Errorf("sending metadata batch: %w", err)
 		}
 	}
@@ -216,12 +226,19 @@ func (s *ClickHouseMetricsStore) checkAndInsertMetadata(ctx context.Context, row
 
 // InsertGauge batch-inserts gauge rows.
 func (s *ClickHouseMetricsStore) InsertGauge(ctx context.Context, rows []GaugeRow) error {
+	ctx, span := tracer.Start(ctx, "ClickHouse.InsertGauge")
+	defer span.End()
+
 	if err := s.checkAndInsertMetadata(ctx, rows); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return err
 	}
 
 	batch, err := s.conn.PrepareBatch(ctx, "INSERT INTO otel_metrics_gauge")
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return fmt.Errorf("preparing gauge batch: %w", err)
 	}
 	for _, r := range rows {
@@ -233,24 +250,38 @@ func (s *ClickHouseMetricsStore) InsertGauge(ctx context.Context, rows []GaugeRo
 			r.Value,
 			r.Flags,
 		); err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
 			return fmt.Errorf("appending gauge row: %w", err)
 		}
 	}
-	return batch.Send()
+	if err := batch.Send(); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
+	}
+	return nil
 }
 
 // InsertSum batch-inserts sum rows.
 func (s *ClickHouseMetricsStore) InsertSum(ctx context.Context, rows []SumRow) error {
+	ctx, span := tracer.Start(ctx, "ClickHouse.InsertSum")
+	defer span.End()
+
 	gaugeRows := make([]GaugeRow, len(rows))
 	for i, r := range rows {
 		gaugeRows[i] = r.GaugeRow
 	}
 	if err := s.checkAndInsertMetadata(ctx, gaugeRows); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return err
 	}
 
 	batch, err := s.conn.PrepareBatch(ctx, "INSERT INTO otel_metrics_sum")
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return fmt.Errorf("preparing sum batch: %w", err)
 	}
 	for _, r := range rows {
@@ -264,10 +295,17 @@ func (s *ClickHouseMetricsStore) InsertSum(ctx context.Context, rows []SumRow) e
 			r.AggregationTemporality,
 			r.IsMonotonic,
 		); err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
 			return fmt.Errorf("appending sum row: %w", err)
 		}
 	}
-	return batch.Send()
+	if err := batch.Send(); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
+	}
+	return nil
 }
 
 // Close closes the underlying ClickHouse connection.
